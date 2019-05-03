@@ -930,8 +930,8 @@ class BivariateSpline(_BivariateSplineBase):
     of data points ``(x, y, z)``.
 
     This class is meant to be subclassed, not instantiated directly.
-    To construct these splines, call either `SmoothBivariateSpline` or
-    `LSQBivariateSpline`.
+    To construct these splines, call `SmoothBivariateSpline`,
+    `LSQBivariateSpline`, or `RectBivariateSpline`.
 
     See Also
     --------
@@ -940,9 +940,10 @@ class BivariateSpline(_BivariateSplineBase):
     SmoothBivariateSpline :
         to create a bivariate spline through the given points
     LSQBivariateSpline :
-        to create a bivariate spline using weighted least-squares fitting
-    RectSphereBivariateSpline :
-        to create a bivariate spline over a rectangular mesh on a sphere
+        to create a BivariateSpline using weighted least-squares fitting
+    RectBivariateSpline :
+        to create a BivariateSpline by approximation over a rectangular mesh
+    RectSphereBivariateSpline
     SmoothSphereBivariateSpline :
         to create a smooth bivariate spline in spherical coordinates
     LSQSphereBivariateSpline :
