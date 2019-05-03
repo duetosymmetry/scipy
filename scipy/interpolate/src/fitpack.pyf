@@ -410,7 +410,7 @@ static int calc_regrid_lwrk(int mx, int my, int kx, int ky,
        integer intent(in),check((1 <= ky) && (ky <= 5)) :: ky
        integer intent(in),depend(kx),check((0 <= nux) && (nux < kx)) :: nux
        integer intent(in),depend(ky),check((0 <= nuy) && (nux < ky)) :: nuy
-       real*8 dimension((nx-nux-kx-1)*(ny-nuy-ky-1)),&
+       real*8 dimension((nx-kx-1)*(ny-ky-1)),&
             depend(nx,ny,nux,nuy,kx,ky),intent(out) :: newc
        integer intent(out) :: ier
      end subroutine pardtc
