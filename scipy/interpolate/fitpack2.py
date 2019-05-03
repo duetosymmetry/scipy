@@ -1018,7 +1018,7 @@ class BivariateSpline(_BivariateSplineBase):
         Returns
         -------
         spline :
-            Another spline of the same class, of order (kx - nx, ky - ny),
+            Another spline of the same class, of order (kx - nux, ky - nuy),
             representing the derivative of this spline.
         """
         if nux == 0 and nuy == 0:
@@ -1034,7 +1034,8 @@ class BivariateSpline(_BivariateSplineBase):
             newtx = tx[nux:nx - nux]
             newty = ty[nuy:ny - nuy]
             newkx, newky = kx - nux, ky - nuy
-            return self._from_tck((newtx, newty, newc, newkx, newky))
+            newclen = (nx - nux - kx - 1) * (ny - nuy - ky - 1)
+            return self._from_tck((newtx, newty, newc[:newclen], newkx, newky))
 
 
 class SmoothBivariateSpline(BivariateSpline):
