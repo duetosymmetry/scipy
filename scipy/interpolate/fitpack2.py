@@ -998,6 +998,34 @@ class BivariateSpline(_BivariateSplineBase):
         kx, ky = self.degrees
         return dfitpack.dblint(tx, ty, c, kx, ky, xa, xb, ya, yb)
 
+    def partial_derivative(self, nx, ny):
+        """Construct a new spline representing a partial derivative of this
+        spline.
+
+        Parameters
+        ----------
+        nx, ny : int
+            Orders of the derivative in x and y respectively.
+
+        Returns
+        -------
+        spline :
+            Another spline of the same class, of order (kx - nx, ky - ny),
+            representing the derivative of this spline.
+        """
+        if nx == 0 and ny == 0:
+            return self
+        else:
+            tx, ty, c = self.tck[:3]
+            kx, ky = self.degrees
+            newc, ier = pardtc(tx, ty, c, kx, ky, nx, ny)
+            if not ier == 0:
+                raise ValueError("Error code returned by pardtc: %s" % ier)
+            newtx = tx[nx:len(tx) - 2 * nx]
+            newty = tx[ny:len(tx) - 2 * ny]
+            newkx, newky = kx - nx, ky - ny
+            return self._from_tck((newtx, newty, newc, newkx, newky))
+
 
 class SmoothBivariateSpline(BivariateSpline):
     """
