@@ -15,6 +15,20 @@ except ImportError:
                      (numpy.__version__, numpy.__file__))
 
 
+def cxx_pre_build_hook(build_ext, ext):
+    from scipy._build_utils.compiler_helper import (get_cxx_std_flag,
+                                                    try_add_flag)
+    cc = build_ext._cxx_compiler
+    args = ext.extra_compile_args
+
+    std_flag = get_cxx_std_flag(cc)
+    if std_flag is not None:
+        args.append(std_flag)
+    if sys.platform == 'darwin':
+        args.append('-mmacosx-version-min=10.7')
+        try_add_flag(args, cc, '-stdlib=libc++')
+
+
 def configuration(parent_package='',top_path=None):
     from numpy.distutils.misc_util import Configuration
     from scipy._build_utils.system_info import get_info as get_system_info
@@ -38,9 +52,15 @@ def configuration(parent_package='',top_path=None):
     # C libraries
     cephes_src = [join('cephes','*.c')]
     cephes_hdr = [join('cephes', '*.h')]
+    sf_error_src = ["sf_error.c"]
+    sf_error_hdr = ["sf_error.h"]
     config.add_library('sc_cephes',sources=cephes_src,
                        include_dirs=[curdir] + inc_dirs,
                        depends=(cephes_hdr + ['*.h']),
+                       macros=define_macros)
+    config.add_library("sf_error", sources=sf_error_src,
+                       include_dirs=[curdir] + inc_dirs,
+                       depends=sf_error_hdr,
                        macros=define_macros)
 
     # Fortran/C++ libraries
@@ -64,7 +84,7 @@ def configuration(parent_package='',top_path=None):
 
     # Extension _ufuncs
     headers = ['*.h', join('cephes', '*.h')]
-    ufuncs_src = ['_ufuncs.c', 'sf_error.c', '_logit.c.src',
+    ufuncs_src = ['_ufuncs.c', '_logit.c.src',
                   "amos_wrappers.c", "cdf_wrappers.c", "specfun_wrappers.c"]
     ufuncs_dep = (
         headers
@@ -74,11 +94,13 @@ def configuration(parent_package='',top_path=None):
         + mach_src
         + cdf_src
         + specfun_src
+        + sf_error_src
+        + sf_error_hdr
     )
     cfg = dict(get_system_info('lapack_opt'))
     cfg.setdefault('include_dirs', []).extend([curdir] + inc_dirs + [numpy.get_include()])
     cfg.setdefault('libraries', []).extend(
-        ['sc_amos', 'sc_cephes', 'sc_mach', 'sc_cdf', 'sc_specfun']
+        ['sc_amos', 'sc_cephes', 'sc_mach', 'sc_cdf', 'sc_specfun', 'sf_error']
     )
     cfg.setdefault('define_macros', []).extend(define_macros)
     config.add_extension('_ufuncs',
@@ -88,21 +110,27 @@ def configuration(parent_package='',top_path=None):
                          **cfg)
 
     # Extension _ufuncs_cxx
-    ufuncs_cxx_src = ['_ufuncs_cxx.cxx', 'sf_error.c',
+    ufuncs_cxx_src = ['_ufuncs_cxx.cxx',
+                      'ellint_carlson_wrap.cxx',
                       '_faddeeva.cxx', 'Faddeeva.cc',
                       '_wright.cxx', 'wright.cc']
-    ufuncs_cxx_dep = (headers + ufuncs_cxx_src + cephes_src
-                      + ['*.hh'])
-    config.add_extension('_ufuncs_cxx',
-                         sources=ufuncs_cxx_src,
-                         depends=ufuncs_cxx_dep,
-                         include_dirs=[curdir] + inc_dirs,
-                         define_macros=define_macros,
-                         extra_info=get_info("npymath"))
+    ufuncs_cxx_dep = (headers + ufuncs_cxx_src + cephes_src +
+                      ['*.hh', join('ellint_carlson_cpp_lite', '*.hh')] +
+                      sf_error_src + sf_error_hdr)
+    ext_cxx = config.add_extension('_ufuncs_cxx',
+                                   sources=ufuncs_cxx_src,
+                                   depends=ufuncs_cxx_dep,
+                                   include_dirs=[curdir] + inc_dirs,
+                                   define_macros=define_macros,
+                                   libraries=["sf_error"],
+                                   extra_info=get_info("npymath"))
+    ext_cxx._pre_build_hook = cxx_pre_build_hook
 
     cfg = dict(get_system_info('lapack_opt'))
+    cfg.setdefault('libraries', []).extend(["sf_error"])
     config.add_extension('_ellip_harm_2',
-                         sources=['_ellip_harm_2.c', 'sf_error.c',],
+                         sources=['_ellip_harm_2.c'],
+                         depends=sf_error_src + sf_error_hdr,
                          **cfg
                          )
 
@@ -124,7 +152,7 @@ def configuration(parent_package='',top_path=None):
     cfg = dict(get_system_info('lapack_opt'))
     cfg.setdefault('include_dirs', []).extend([curdir] + inc_dirs + [numpy.get_include()])
     cfg.setdefault('libraries', []).extend(
-        ['sc_amos', 'sc_cephes', 'sc_mach', 'sc_cdf', 'sc_specfun']
+        ['sc_amos', 'sc_cephes', 'sc_mach', 'sc_cdf', 'sc_specfun', 'sf_error']
     )
     cfg.setdefault('define_macros', []).extend(define_macros)
     config.add_extension('cython_special',
