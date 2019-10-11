@@ -1,6 +1,7 @@
 # Created by Pearu Peterson, June 2003
 from __future__ import division, print_function, absolute_import
 
+import itertools
 import numpy as np
 from numpy.testing import (assert_equal, assert_almost_equal, assert_array_equal,
         assert_array_almost_equal, assert_allclose)
@@ -465,6 +466,47 @@ class TestRectBivariateSpline(object):
         assert_array_almost_equal(lut(x,y,dy=1,grid=False),dy)
         assert_array_almost_equal(lut(x,y,dx=1,dy=1,grid=False),dxdy)
 
+    def test_partial_derivative_method_grid(self):
+        x = array([1,2,3,4,5])
+        y = array([1,2,3,4,5])
+        z = array([[1,2,1,2,1],[1,2,1,2,1],[1,2,3,2,1],[1,2,2,2,1],[1,2,1,2,1]])
+        dx = array([[0,0,-20,0,0],[0,0,13,0,0],[0,0,4,0,0],
+            [0,0,-11,0,0],[0,0,4,0,0]])/6.
+        dy = array([[4,-1,0,1,-4],[4,-1,0,1,-4],[0,1.5,0,-1.5,0],
+            [2,.25,0,-.25,-2],[4,-1,0,1,-4]])
+        dxdy = array([[40,-25,0,25,-40],[-26,16.25,0,-16.25,26],
+            [-8,5,0,-5,8],[22,-13.75,0,13.75,-22],[-8,5,0,-5,8]])/6.
+        lut = RectBivariateSpline(x,y,z)
+        assert_array_almost_equal(lut.partial_derivative(1, 0)(x, y), dx)
+        assert_array_almost_equal(lut.partial_derivative(0, 1)(x, y), dy)
+        assert_array_almost_equal(lut.partial_derivative(1, 1)(x, y), dxdy)
+
+    def test_partial_derivative_method(self):
+        x = array([1,2,3,4,5])
+        y = array([1,2,3,4,5])
+        z = array([[1,2,1,2,1],[1,2,1,2,1],[1,2,3,2,1],[1,2,2,2,1],[1,2,1,2,1]])
+        dx = array([0,0,2./3,0,0])
+        dy = array([4,-1,0,-.25,-4])
+        dxdy = array([160,65,0,55,32])/24.
+        lut = RectBivariateSpline(x,y,z)
+        assert_array_almost_equal(lut.partial_derivative(1, 0)(x, y,
+                                                               grid=False),
+                                  dx)
+        assert_array_almost_equal(lut.partial_derivative(0, 1)(x, y,
+                                                               grid=False),
+                                  dy)
+        assert_array_almost_equal(lut.partial_derivative(1, 1)(x, y,
+                                                               grid=False),
+                                  dxdy)
+
+    def test_partial_derivative_order_too_large(self):
+        x = array([0, 1, 2, 3, 4], dtype=float)
+        y = x.copy()
+        z = ones((x.size, y.size))
+        lut = RectBivariateSpline(x, y, z)
+        with assert_raises(ValueError):
+            dlut = lut.partial_derivative(4, 1)
+
     def test_broadcast(self):
         x = array([1,2,3,4,5])
         y = array([1,2,3,4,5])
@@ -515,6 +557,13 @@ class TestRectSphereBivariateSpline(object):
         assert_allclose(lut(x, y, dtheta=1, dphi=1), _numdiff_2d(lut, x, y, dx=1, dy=1, eps=1e-6),
                         rtol=1e-3, atol=1e-3)
 
+        assert_array_equal(lut(x, y, dtheta=1),
+                           lut.partial_derivative(1, 0)(x, y))
+        assert_array_equal(lut(x, y, dphi=1),
+                           lut.partial_derivative(0, 1)(x, y))
+        assert_array_equal(lut(x, y, dtheta=1, dphi=1),
+                           lut.partial_derivative(1, 1)(x, y))
+
     def test_derivatives(self):
         y = linspace(0.01, 2*pi-0.01, 7)
         x = linspace(0.01, pi-0.01, 7)
@@ -538,6 +587,13 @@ class TestRectSphereBivariateSpline(object):
                         _numdiff_2d(lambda x,y: lut(x,y,grid=False), x, y, dx=1, dy=1, eps=1e-6),
                         rtol=1e-3, atol=1e-3)
 
+        assert_array_equal(lut(x, y, dtheta=1, grid=False),
+                           lut.partial_derivative(1, 0)(x, y, grid=False))
+        assert_array_equal(lut(x, y, dphi=1, grid=False),
+                           lut.partial_derivative(0, 1)(x, y, grid=False))
+        assert_array_equal(lut(x, y, dtheta=1, dphi=1, grid=False),
+                           lut.partial_derivative(1, 1)(x, y, grid=False))
+
 
 def _numdiff_2d(func, x, y, dx=0, dy=0, eps=1e-8):
     if dx == 0 and dy == 0:
@@ -551,3 +607,56 @@ def _numdiff_2d(func, x, y, dx=0, dy=0, eps=1e-8):
                 - func(x + eps, y - eps) + func(x - eps, y - eps)) / (2*eps)**2
     else:
         raise ValueError("invalid derivative order")
+
+
+class Test_DerivedBivariateSpline(object):
+    """Test the creation, usage, and attribute access of the (private)
+    _DerivedBivariateSpline class.
+    """
+    def setup_method(self):
+        x = np.concatenate(list(zip(range(10), range(10))))
+        y = np.concatenate(list(zip(range(10), range(1, 11))))
+        z = np.concatenate((np.linspace(3, 1, 10), np.linspace(1, 3, 10)))
+        with suppress_warnings() as sup:
+            r = sup.record(UserWarning, "\nThe coefficients of the spline")
+            self.lut_lsq = LSQBivariateSpline(x, y, z,
+                                              linspace(0.5, 19.5, 4),
+                                              linspace(1.5, 20.5, 4),
+                                              eps=1e-2)
+        self.lut_smooth = SmoothBivariateSpline(x, y, z)
+        xx = linspace(0, 1, 20)
+        yy = xx + 1.0
+        zz = array([np.roll(z, i) for i in range(z.size)])
+        self.lut_rect = RectBivariateSpline(xx, yy, zz)
+        self.orders = list(itertools.product(range(3), range(3)))
+
+    def test_creation_from_LSQ(self):
+        for nux, nuy in self.orders:
+            lut_der = self.lut_lsq.partial_derivative(nux, nuy)
+            a = lut_der(3.5, 3.5, grid=False)
+            b = self.lut_lsq(3.5, 3.5, dx=nux, dy=nuy, grid=False)
+            assert_equal(a, b)
+
+    def test_creation_from_Smooth(self):
+        for nux, nuy in self.orders:
+            lut_der = self.lut_smooth.partial_derivative(nux, nuy)
+            a = lut_der(5.5, 5.5, grid=False)
+            b = self.lut_smooth(5.5, 5.5, dx=nux, dy=nuy, grid=False)
+            assert_equal(a, b)
+
+    def test_creation_from_Rect(self):
+        for nux, nuy in self.orders:
+            lut_der = self.lut_rect.partial_derivative(nux, nuy)
+            a = lut_der(0.5, 1.5, grid=False)
+            b = self.lut_rect(0.5, 1.5, dx=nux, dy=nuy, grid=False)
+            assert_equal(a, b)
+
+    def test_invalid_attribute_fp(self):
+        der = self.lut_rect.partial_derivative(1, 1)
+        with assert_raises(AttributeError):
+            a = der.fp
+
+    def test_invalid_attribute_get_residual(self):
+        der = self.lut_smooth.partial_derivative(1, 1)
+        with assert_raises(AttributeError):
+            a = der.get_residual()

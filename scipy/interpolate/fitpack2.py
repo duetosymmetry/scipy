@@ -786,6 +786,17 @@ class _BivariateSplineBase(object):
         implementation of bivariate spline interpolation on a spherical grid
     """
 
+    @classmethod
+    def _from_tck(cls, tck):
+        """Construct a spline object from given tck and degree"""
+        self = cls.__new__(cls)
+        if len(tck) != 5:
+            raise ValueError("tck should be a 5 element tuple of tx,"
+                             " ty, c, kx, ky")
+        self.tck = tck[:3]
+        self.degrees = tck[3:]
+        return self
+
     def get_residual(self):
         """ Return weighted sum of squared residuals of the spline
         approximation: sum ((w[i]*(z[i]-s(x[i],y[i])))**2,axis=0)
@@ -879,6 +890,55 @@ class _BivariateSplineBase(object):
             z = z.reshape(shape)
         return z
 
+    def partial_derivative(self, nux, nuy):
+        """Construct a new spline representing a partial derivative of this
+        spline.
+
+        Parameters
+        ----------
+        nux, nuy : int
+            Orders of the derivative in x and y respectively. They must be
+            non-negative integers and less than the respective degree of the
+            original spline (self) in that direction (kx, ky).
+
+        Returns
+        -------
+        spline :
+            A new spline of degrees (kx - nux, ky - nuy) representing the
+            derivative of this spline.
+
+        Notes
+        -----
+        The returned spline is an instance of the class
+        ``_DerivedBivariateSpline`` that supports spline evaluation operations,
+        but is not directly constructed from original data.
+        """
+        if nux == 0 and nuy == 0:
+            return self
+        else:
+            kx, ky = self.degrees
+            if not (nux >= 0 and nuy >= 0):
+                raise ValueError("order of derivative must be positive or"
+                                 " zero")
+            if not (nux < kx and nuy < ky):
+                raise ValueError("order of derivative must be less than"
+                                 " degree of spline")
+            tx, ty, c = self.tck[:3]
+            newc, ier = dfitpack.pardtc(tx, ty, c, kx, ky, nux, nuy)
+            if ier != 0:
+                # This should not happen under normal conditions.
+                raise ValueError("Unexpected error code returned by"
+                                 " pardtc: %d" % ier)
+            nx = len(tx)
+            ny = len(ty)
+            newtx = tx[nux:nx - nux]
+            newty = ty[nuy:ny - nuy]
+            newkx, newky = kx - nux, ky - nuy
+            newclen = (nx - nux - kx - 1) * (ny - nuy - ky - 1)
+            return _DerivedBivariateSpline._from_tck((newtx, newty,
+                                                      newc[:newclen],
+                                                      newkx, newky))
+
 
 _surfit_messages = {1: """
 The required storage space exceeds the available storage space: nxest
@@ -931,8 +991,8 @@ class BivariateSpline(_BivariateSplineBase):
     of data points ``(x, y, z)``.
 
     This class is meant to be subclassed, not instantiated directly.
-    To construct these splines, call either `SmoothBivariateSpline` or
-    `LSQBivariateSpline`.
+    To construct these splines, call `SmoothBivariateSpline`,
+    `LSQBivariateSpline`, or `RectBivariateSpline`.
 
     See Also
     --------
@@ -942,23 +1002,14 @@ class BivariateSpline(_BivariateSplineBase):
         to create a BivariateSpline through the given points
     LSQBivariateSpline :
         to create a BivariateSpline using weighted least-squares fitting
+    RectBivariateSpline :
+        to create a BivariateSpline by approximation over a rectangular mesh
     RectSphereBivariateSpline
     SmoothSphereBivariateSpline :
     LSQSphereBivariateSpline
     bisplrep : older wrapping of FITPACK
     bisplev : older wrapping of FITPACK
     """
-
-    @classmethod
-    def _from_tck(cls, tck):
-        """Construct a spline object from given tck and degree"""
-        self = cls.__new__(cls)
-        if len(tck) != 5:
-            raise ValueError("tck should be a 5 element tuple of tx,"
-                             " ty, c, kx, ky")
-        self.tck = tck[:3]
-        self.degrees = tck[3:]
-        return self
 
     def ev(self, xi, yi, dx=0, dy=0):
         """
@@ -1002,6 +1053,33 @@ class BivariateSpline(_BivariateSplineBase):
         tx, ty, c = self.tck[:3]
         kx, ky = self.degrees
         return dfitpack.dblint(tx, ty, c, kx, ky, xa, xb, ya, yb)
+
+
+class _DerivedBivariateSpline(_BivariateSplineBase):
+    """Bivariate spline constructed from the coefficients and knots of another
+    spline.
+
+    Notes
+    -----
+    The class is not meant to be instantiated directly from the data to be
+    interpolated or smoothed. As a result, its ``fp`` attribute and
+    ``get_residual`` method are inherited but overriden; ``AttributeError`` is
+    raised when they are accessed.
+
+    The other inherited attributes can be used as usual.
+    """
+    __invalid_why = ("is unavailable, because _DerivedBivariateSpline"
+                     " instance is not constructed from data that are to be"
+                     " interpolated or smoothed, but derived from the"
+                     " underlying knots and coefficients of another spline"
+                     " object")
+
+    @property
+    def fp(self):
+        raise AttributeError("attribute \"fp\" %s" % self.__invalid_why)
+
+    def get_residual(self):
+        raise AttributeError("method \"get_residual\" %s" % self.__invalid_why)
 
 
 class SmoothBivariateSpline(BivariateSpline):
